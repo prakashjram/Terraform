@@ -1,0 +1,639 @@
+
+
+
+1.  A.VPC
+
+provider "aws"
+ {
+ region = "ap-south-1"
+ }
+resource "aws_vpc" "vpc" { 
+cidr_block = "192.168.0.0/16"
+instance_tenancy = "default"
+ tags = {
+ Name = "demo-vpc" 
+ }
+}
+
+Complete process to Create a VPC 
+provider "aws"
+ {
+ region = "ap-south-1"
+ }
+resource "aws_vpc" "vpc" { 
+cidr_block = "192.168.0.0/16"
+instance_tenancy = "default"
+ tags = {
+ Name = "demo-vpc" 
+ }
+}
+
+Subnet:
+resource "aws_subnet" "pub" {
+  vpc_id     = aws_vpc.vpc.id
+  cidr_block = "192.168.1.0/24"
+
+  tags = {
+    Name = "public"
+  }
+}
+
+Subnet:
+resource "aws_subnet" "priv" {
+  vpc_id     = aws_vpc.vpc.id
+  cidr_block = "192.168.3.0/24"
+
+  tags = {
+    Name = "private"
+  }
+}
+
+Internet Gateway:
+resource "aws_internet_gateway" "igw" {
+  vpc_id = aws_vpc.vpc.id
+
+  tags = {
+    Name = "IGW"
+  }
+}
+
+Elastic IP:
+resource "aws_eip" "ip" {
+  vpc      = true
+}
+
+NAT Gateway:
+resource "aws_nat_gateway" "ngw" {
+  allocation_id = aws_eip.ip.id
+  subnet_id     = aws_subnet.priv.id
+
+  tags = {
+    Name = "NGW"
+  }
+
+}
+
+Route Table:
+resource "aws_route_table" "rt1" {
+  vpc_id = aws_vpc.vpc.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.igw.id
+  }
+tags = {
+    Name = "custom"
+  }
+}
+
+Route Table:
+resource "aws_route_table" "rt2" {
+  vpc_id = aws_vpc.vpc.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.ngw.id
+  }
+tags = {
+    Name = "main"
+  }
+}
+
+Subnet Association:
+resource "aws_route_table_association" "as_1" {
+  subnet_id      = aws_subnet.pub.id
+  route_table_id = aws_route_table.rt1.id
+}
+
+Subnet Association:
+resource "aws_route_table_association" "as_2" {
+  subnet_id      = aws_subnet.priv.id
+  route_table_id = aws_route_table.rt2.id
+}
+
+Security Group:
+resource "aws_security_group" "sg" {
+  name        = "first-SG"
+  description = "Allow TLS inbound traffic"
+  vpc_id      = aws_vpc.vpc.id
+
+  ingress {
+    description      = "TLS from VPC"
+    from_port        = 22
+    to_port          = 22
+    protocol         = "tcp"
+    cidr_blocks      = [aws_vpc.vpc.cidr_block]
+  }
+
+  egress {
+    from_port        = 0
+    to_port          = 0
+    protocol         = "-1"
+    cidr_blocks      = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "first-SG"
+  }
+}
+
+
+B.Public Subnet  (If it is 'True' then it is Public)
+
+resource “aws_subnet” “prod-subnet-public-1” {
+    vpc_id = “${aws_vpc.prod-vpc.id}”
+    cidr_block = “10.0.1.0/24”
+    map_public_ip_on_launch = “true” 
+    availability_zone = “eu-west-2a”  
+  tags {
+        Name = “prod-subnet-public-1”
+    }
+}
+B.Private Subnet  (If it is 'False' then it is Private)
+
+resource “aws_subnet” “prod-subnet-public-1” {
+    vpc_id = “${aws_vpc.prod-vpc.id}”
+    cidr_block = “10.0.1.0/24”
+    map_public_ip_on_launch = “False”  
+    availability_zone = “eu-west-2a”  
+  tags {
+        Name = “prod-subnet-public-1”
+    }
+}
+C. Deploy Cloud NAT and enable NATing for Private subnet
+
+# Define provider and region
+provider "google" {
+  region = "us-central1"
+}
+
+# Create a VPC network
+resource "google_compute_network" "my_vpc_network" {
+  name = "my-vpc-network"
+}
+
+# Create a subnet
+resource "google_compute_subnetwork" "my_subnet" {
+  name          = "my-subnet"
+  ip_cidr_range = "10.0.1.0/24"
+  network       = google_compute_network.my_vpc_network.self_link
+}
+
+# Create a Cloud NAT router
+resource "google_compute_router" "nat_router" {
+  name    = "nat-router"
+  region  = "us-central1"
+  network = google_compute_network.my_vpc_network.self_link
+
+  # Enable NAT
+  nat_config {
+    enable_nat = true
+  }
+}
+
+# Create a NAT configuration for the private subnet
+resource "google_compute_router_nat" "my_nat_config" {
+  name        = "my-nat-config"
+  router      = google_compute_router.nat_router.name
+  source_subnetwork_ip_ranges_to_nat = ["primary-ip-range"]
+  log_config {
+    enable = false
+  }
+  nat_ips = [google_compute_address.nat_ip.address]
+}
+
+# Create an external IP address for Cloud NAT
+resource "google_compute_address" "nat_ip" {
+  name = "nat-ip"
+}
+
+
+D.Deploy Virtual machine on Private Subnet and check the internet access
+
+
+
+# Define provider and region
+provider "aws" {
+  region = "us-east-1"
+}
+
+# Create a VPC
+resource "aws_vpc" "my_vpc" {
+  cidr_block = "10.0.0.0/16"
+  tags = {
+    Name = "my-vpc"
+  }
+}
+
+# Create a public subnet
+resource "aws_subnet" "public_subnet" {
+  vpc_id     = aws_vpc.my_vpc.id
+  cidr_block = "10.0.1.0/24"
+  tags = {
+    Name = "public-subnet"
+  }
+}
+
+# Create a private subnet
+resource "aws_subnet" "private_subnet" {
+  vpc_id     = aws_vpc.my_vpc.id
+  cidr_block = "10.0.2.0/24"
+  tags = {
+    Name = "private-subnet"
+  }
+}
+
+# Create a security group for the VM
+resource "aws_security_group" "vm_security_group" {
+  name_prefix = "vm-security-group"
+  vpc_id      = aws_vpc.my_vpc.id
+
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+# Create a VM on the private subnet
+resource "aws_instance" "private_vm" {
+  ami           = "ami-0c55b159cbfafe1f0"
+  instance_type = "t2.micro"
+  key_name      = "my-key"
+  subnet_id     = aws_subnet.private_subnet.id
+  vpc_security_group_ids = [
+    aws_security_group.vm_security_group.id
+  ]
+}
+
+# Check for internet access from the VM
+resource "null_resource" "check_internet_access" {
+  provisioner "local-exec" {
+    command = "curl -Is https://www.google.com/ | head -1"
+    connection {
+      type        = "ssh"
+      host        = aws_instance.private_vm.private_ip
+      user        = "ec2-user"
+      private_key = file("~/.ssh/my-key.pem")
+    }
+  }
+}
+
+
+E.Go to VM in Private Subnet and Check what is my IP, it should display NAT Public IP 
+
+
+
+# Define provider and region
+provider "aws" {
+  region = "us-east-1"
+}
+
+# Create a VPC
+resource "aws_vpc" "my_vpc" {
+  cidr_block = "10.0.0.0/16"
+  tags = {
+    Name = "my-vpc"
+  }
+}
+
+# Create a public subnet
+resource "aws_subnet" "public_subnet" {
+  vpc_id     = aws_vpc.my_vpc.id
+  cidr_block = "10.0.1.0/24"
+  tags = {
+    Name = "public-subnet"
+  }
+}
+
+# Create a private subnet
+resource "aws_subnet" "private_subnet" {
+  vpc_id     = aws_vpc.my_vpc.id
+  cidr_block = "10.0.2.0/24"
+  tags = {
+    Name = "private-subnet"
+  }
+}
+
+# Create a security group for the VM
+resource "aws_security_group" "vm_security_group" {
+  name_prefix = "vm-security-group"
+  vpc_id      = aws_vpc.my_vpc.id
+
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+# Create a VM on the private subnet
+resource "aws_instance" "private_vm" {
+  ami           = "ami-0c55b159cbfafe1f0"
+  instance_type = "t2.micro"
+  key_name      = "my-key"
+  subnet_id     = aws_subnet.private_subnet.id
+  vpc_security_group_ids = [
+    aws_security_group.vm_security_group.id
+  ]
+}
+
+# Define a null resource to connect to the private VM and check the NAT public IP
+resource "null_resource" "private_vm_nat_ip" {
+  connection {
+    type        = "ssh"
+    host        = aws_instance.private_vm.private_ip
+    user        = "ec2-user"
+    private_key = file("~/.ssh/my-key.pem")
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "curl http://169.254.169.254/latest/meta-data/public-ipv4"
+    ]
+
+    on_failure = "continue"
+  }
+}
+
+
+2. A  VPC
+
+
+
+# vpc/main.tf
+
+# Define the module
+module "my_vpc" {
+  source = "./modules/vpc"
+
+  # Input variables
+  vpc_name              = "my-vpc"
+  vpc_cidr              = "10.0.0.0/16"
+  public_subnet_cidrs   = ["10.0.1.0/24", "10.0.2.0/24"]
+  private_subnet_cidrs  = ["10.0.3.0/24", "10.0.4.0/24"]
+  enable_dns_support    = true
+  enable_dns_hostnames  = true
+}
+
+# modules/vpc/main.tf
+
+# Create the VPC
+resource "aws_vpc" "my_vpc" {
+  cidr_block = var.vpc_cidr
+
+  tags = {
+    Name = var.vpc_name
+  }
+
+  enable_dns_support   = var.enable_dns_support
+  enable_dns_hostnames = var.enable_dns_hostnames
+}
+
+# Create the public subnets
+resource "aws_subnet" "public_subnets" {
+  count = length(var.public_subnet_cidrs)
+
+  vpc_id            = aws_vpc.my_vpc.id
+  cidr_block        = var.public_subnet_cidrs[count.index]
+  map_public_ip_on_launch = true
+
+  tags = {
+    Name = "${var.vpc_name}-public-${count.index+1}"
+  }
+}
+
+# Create the private subnets
+resource "aws_subnet" "private_subnets" {
+  count = length(var.private_subnet_cidrs)
+
+  vpc_id            = aws_vpc.my_vpc.id
+  cidr_block        = var.private_subnet_cidrs[count.index]
+
+  tags = {
+    Name = "${var.vpc_name}-private-${count.index+1}"
+  }
+}
+
+# Export the VPC ID
+output "vpc_id" {
+  value = aws_vpc.my_vpc.id
+}
+
+
+2. B. one Private Subnet & Public Subnet
+
+# modules/subnets/main.tf
+
+# Create the public subnet
+resource "aws_subnet" "public" {
+  vpc_id     = var.vpc_id
+  cidr_block = var.public_cidr
+
+  map_public_ip_on_launch = true
+
+  tags = {
+    Name = "${var.vpc_name}-public"
+  }
+}
+
+# Create the private subnet
+resource "aws_subnet" "private" {
+  vpc_id     = var.vpc_id
+  cidr_block = var.private_cidr
+
+  tags = {
+    Name = "${var.vpc_name}-private"
+  }
+}
+
+# Export the subnet IDs
+output "public_subnet_id" {
+  value = aws_subnet.public.id
+}
+
+output "private_subnet_id" {
+  value = aws_subnet.private.id
+}
+
+
+# main.tf
+
+# Define the module
+module "my_subnets" {
+  source = "./modules/subnets"
+
+  # Input variables
+  vpc_id       = module.my_vpc.vpc_id
+  vpc_name     = "my-vpc"
+  public_cidr  = "10.0.1.0/24"
+  private_cidr = "10.0.2.0/24"
+}
+
+
+2. C. Deploy Cloud NAT and enable NATing for Private subnet
+
+# modules/nat/main.tf
+
+# Create the Cloud NAT gateway
+resource "google_compute_router_nat" "nat_gateway" {
+  name                  = var.nat_gateway_name
+  router                = var.router_name
+  nat_ip_allocate_option = "AUTO_ONLY"
+
+  # Define the NAT configuration for each private subnet
+  nat_config {
+    source_subnetwork_ip_ranges_to_nat = "ALL_SUBNETWORKS_ALL_IP_RANGES"
+    nat_ip_allocate_option             = "AUTO_ONLY"
+  }
+}
+
+# Enable NAT on each private subnet
+resource "google_compute_router_interface_nat" "private_subnets" {
+  count = length(var.private_subnet_ids)
+
+  name   = "${var.nat_gateway_name}-nat-interface-${count.index}"
+  router = var.router_name
+  region = var.region
+
+  nat_ip_allocate_option = "AUTO_ONLY"
+  subnetwork             = element(var.private_subnet_ids, count.index)
+
+  depends_on = [google_compute_router_nat.nat_gateway]
+}
+
+
+# main.tf
+
+# Define the module
+module "my_nat" {
+  source = "./modules/nat"
+
+  # Input variables
+  nat_gateway_name    = "my-nat-gateway"
+  router_name         = "my-router"
+  region              = "us-central1"
+  private_subnet_ids  = [module.my_subnets.private_subnet_id]
+}
+
+
+2. D .Deploy Virtual machine on Private Subnet and check the internet access
+
+# modules/vm/main.tf
+
+# Define the virtual machine resource
+resource "google_compute_instance" "vm_instance" {
+  name         = var.instance_name
+  machine_type = var.machine_type
+  zone         = var.zone
+
+  boot_disk {
+    initialize_params {
+      image = var.image
+    }
+  }
+
+  network_interface {
+    network    = var.vpc_network
+    subnetwork = var.private_subnet
+  }
+
+  # Use a startup script to check internet access
+  metadata_startup_script = <<-EOF
+    #!/bin/bash
+
+    if ping -c 1 google.com; then
+      echo "Internet is accessible"
+    else
+      echo "Internet is not accessible"
+    fi
+  EOF
+}
+
+# Output the instance's private IP address
+output "instance_private_ip" {
+  value = google_compute_instance.vm_instance.network_interface.0.network_ip
+}
+
+
+# main.tf
+
+# Define the module
+module "my_vm" {
+  source = "./modules/vm"
+
+  # Input variables
+  instance_name   = "my-vm-instance"
+  machine_type    = "n1-standard-1"
+  zone            = "us-central1-a"
+  image           = "debian-cloud/debian-10"
+  vpc_network     = module.my_vpc.vpc_network
+  private_subnet  = module.my_subnets.private_subnet
+}
+
+# Output the instance's private IP address
+output "instance_private_ip" {
+  value = module.my_vm.instance_private_ip
+}
+
+
+2. E. Go to VM in Private Subnet and Check what is my IP, it should display NAT Public IP
+
+# modules/vm_connect/main.tf
+
+# Define the local-exec provisioner to run a command after the VM is created
+resource "null_resource" "vm_connect" {
+  triggers = {
+    # Re-run the provisioner if the VM IP address changes
+    vm_ip = google_compute_instance.vm_instance.network_interface.0.access_config.0.nat_ip
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOF
+      #!/bin/bash
+
+      # SSH into the VM and get the public IP address
+      ssh -o StrictHostKeyChecking=no -i ${var.ssh_private_key} ${var.username}@${google_compute_instance.vm_instance.network_interface.0.access_config.0.nat_ip} "curl -s ifconfig.co"
+    EOF
+  }
+}
+
+# Output the NAT public IP address
+output "nat_public_ip" {
+  value = google_compute_instance.vm_instance.network_interface.0.access_config.0.nat_ip
+}
+
+
+# main.tf
+
+# Define the module
+module "my_vm_connect" {
+  source = "./modules/vm_connect"
+
+  # Input variables
+  ssh_private_key = var.ssh_private_key
+  username        = "my-username"
+}
+
+# Output the NAT public IP address
+output "nat_public_ip" {
+  value = module.my_vm_connect.nat_public_ip
+}
+
+
